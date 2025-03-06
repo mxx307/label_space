@@ -1,11 +1,12 @@
+use ctrlc;
 use eframe::egui;
-use std::path::PathBuf;
+use image::DynamicImage;
+use rand::seq::IndexedRandom;
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
-use image::DynamicImage;
-use std::collections::HashMap;
 use std::panic;
-use ctrlc;
+use std::path::PathBuf;
 
 #[derive(Clone)]
 struct BoundingBox {
@@ -20,7 +21,7 @@ struct BoundingBox {
 struct Statistics {
     total_images: usize,
     modified_images: usize,
-    total_class_counts: HashMap<i32, usize>,  // 所有图片中各类型的数量
+    total_class_counts: HashMap<i32, usize>, // 所有图片中各类型的数量
     current_class_counts: HashMap<i32, usize>, // 当前图片中各类型的数量
 }
 
@@ -36,6 +37,7 @@ impl Default for Statistics {
 }
 
 #[derive(Clone)]
+// 在AnnotationApp结构体中添加字段
 struct AnnotationApp {
     image_dir: Option<PathBuf>,
     label_dir: Option<PathBuf>,
@@ -54,6 +56,8 @@ struct AnnotationApp {
     selected_class: i32,
     is_drawing: bool,
     drawing_start: Option<egui::Pos2>,
+    scroll_to_current: bool,
+    history: Vec<PathBuf>, // 记录浏览历史
 }
 
 impl Default for AnnotationApp {
@@ -76,6 +80,8 @@ impl Default for AnnotationApp {
             selected_class: 0,
             is_drawing: false,
             drawing_start: None,
+            scroll_to_current: false,
+            history: vec![],
         };
         app.load_modified_records();
         app
@@ -88,11 +94,16 @@ impl AnnotationApp {
     }
 
     fn load_image(&mut self, path: &PathBuf) {
+        if let Some(current_path) = &self.current_image_path {
+            self.history.push(current_path.clone());
+        }
+
         if let Some(img) = self.image_cache.get(path) {
             self.current_image = Some(img.clone());
             self.current_image_path = Some(path.clone());
             self.texture = None;
-            self.current_image_name = path.file_name()
+            self.current_image_name = path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .map(|s| s.to_string());
             self.load_annotations();
@@ -104,10 +115,11 @@ impl AnnotationApp {
             self.current_image = Some(img.clone());
             self.current_image_path = Some(path.clone());
             self.texture = None;
-            self.current_image_name = path.file_name()
+            self.current_image_name = path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .map(|s| s.to_string());
-            
+
             self.update_image_cache(path.clone(), img);
             self.load_annotations();
         } else {
@@ -118,10 +130,10 @@ impl AnnotationApp {
     fn load_annotations(&mut self) {
         if let Some(image_path) = &self.current_image_path {
             if let Some(label_dir) = &self.label_dir {
-                let label_path = label_dir.join(
-                    image_path.file_stem().unwrap()
-                ).with_extension("txt");
-                
+                let label_path = label_dir
+                    .join(image_path.file_stem().unwrap())
+                    .with_extension("txt");
+
                 self.bounding_boxes.clear();
                 if let Ok(file) = File::open(label_path) {
                     let reader = BufReader::new(file);
@@ -131,7 +143,7 @@ impl AnnotationApp {
                                 .split_whitespace()
                                 .map(|s| s.parse().unwrap_or(0.0))
                                 .collect();
-                            
+
                             if parts.len() == 5 {
                                 self.bounding_boxes.push(BoundingBox {
                                     class: parts[0] as i32,
@@ -152,17 +164,18 @@ impl AnnotationApp {
     fn save_annotations(&mut self) {
         if let Some(image_path) = &self.current_image_path {
             if let Some(label_dir) = &self.label_dir {
-                let label_path = label_dir.join(
-                    image_path.file_stem().unwrap()
-                ).with_extension("txt");
-                
+                let label_path = label_dir
+                    .join(image_path.file_stem().unwrap())
+                    .with_extension("txt");
+
                 if let Ok(mut file) = File::create(label_path) {
                     for bbox in &self.bounding_boxes {
                         writeln!(
                             file,
                             "{} {} {} {} {}",
                             bbox.class, bbox.x, bbox.y, bbox.width, bbox.height
-                        ).ok();
+                        )
+                        .ok();
                     }
                     if let Some(name) = &self.current_image_name {
                         self.modified_images.insert(name.clone());
@@ -179,7 +192,9 @@ impl AnnotationApp {
                 self.cached_image_files = entries
                     .filter_map(|entry| entry.ok())
                     .filter(|entry| {
-                        entry.path().extension()
+                        entry
+                            .path()
+                            .extension()
                             .map_or(false, |ext| ext == "jpg" || ext == "png")
                     })
                     .map(|e| e.path())
@@ -192,11 +207,8 @@ impl AnnotationApp {
 
     fn update_image_cache(&mut self, path: PathBuf, img: DynamicImage) {
         self.image_cache.insert(path.clone(), img);
-        
-        if let Some(current_pos) = self.cached_image_files
-            .iter()
-            .position(|p| p == &path) 
-        {
+
+        if let Some(current_pos) = self.cached_image_files.iter().position(|p| p == &path) {
             if current_pos + 1 < self.cached_image_files.len() {
                 let next_path = &self.cached_image_files[current_pos + 1];
                 if !self.image_cache.contains_key(next_path) {
@@ -206,7 +218,7 @@ impl AnnotationApp {
                     }
                 }
             }
-            
+
             if current_pos > 0 {
                 let prev_path = &self.cached_image_files[current_pos - 1];
                 if !self.image_cache.contains_key(prev_path) {
@@ -219,14 +231,20 @@ impl AnnotationApp {
         }
 
         while self.image_cache.len() > self.max_cache_size {
-            if let Some(current_pos) = self.current_image_path.as_ref()
+            if let Some(current_pos) = self
+                .current_image_path
+                .as_ref()
                 .and_then(|p| self.cached_image_files.iter().position(|fp| fp == p))
             {
                 let mut furthest_path = None;
                 let mut max_distance = 0;
-                
+
                 for cached_path in self.image_cache.keys() {
-                    if let Some(pos) = self.cached_image_files.iter().position(|p| p == cached_path) {
+                    if let Some(pos) = self
+                        .cached_image_files
+                        .iter()
+                        .position(|p| p == cached_path)
+                    {
                         let distance = (pos as i32 - current_pos as i32).abs();
                         if distance > max_distance {
                             max_distance = distance;
@@ -234,7 +252,7 @@ impl AnnotationApp {
                         }
                     }
                 }
-                
+
                 if let Some(path_to_remove) = furthest_path {
                     self.image_cache.remove(&path_to_remove);
                 }
@@ -245,53 +263,95 @@ impl AnnotationApp {
     fn resize_to_limit(img: &DynamicImage, max_width: u32, max_height: u32) -> DynamicImage {
         let width = img.width();
         let height = img.height();
-        
+
         if width <= max_width && height <= max_height {
             return img.clone();
         }
-        
-        let ratio = (max_width as f32 / width as f32)
-            .min(max_height as f32 / height as f32);
-            
+
+        let ratio = (max_width as f32 / width as f32).min(max_height as f32 / height as f32);
+
         let new_width = (width as f32 * ratio) as u32;
         let new_height = (height as f32 * ratio) as u32;
-        
-        img.resize(
-            new_width,
-            new_height,
-            image::imageops::FilterType::Triangle
-        )
+
+        img.resize(new_width, new_height, image::imageops::FilterType::Triangle)
     }
 
-    fn switch_image(&mut self, next: bool) {
+    // 修改switch_image函数
+    fn switch_image(&mut self, next: bool, random_unmodified: bool) {
         if self.cached_image_files.is_empty() {
             self.update_file_list();
         }
 
-        if let Some(current_path) = &self.current_image_path {
-            if let Some(current_pos) = self.cached_image_files
+        let mut target_path: Option<PathBuf> = None;
+
+        if random_unmodified {
+            let unmodified_files: Vec<PathBuf> = self
+                .cached_image_files
                 .iter()
-                .position(|p| p == current_path) 
-            {
-                let new_pos = if next {
-                    if current_pos + 1 < self.cached_image_files.len() { 
-                        current_pos + 1 
-                    } else { 
-                        0 
-                    }
-                } else {
-                    if current_pos > 0 { 
-                        current_pos - 1 
-                    } else { 
-                        self.cached_image_files.len() - 1 
-                    }
-                };
-                let path = self.cached_image_files[new_pos].clone();
+                .filter(|path| {
+                    let file_name = path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|s| s.to_string());
+                    file_name
+                        .as_ref()
+                        .map_or(false, |name| !self.modified_images.contains(name))
+                })
+                .cloned()
+                .collect();
+
+            if let Some(random_path) = unmodified_files.choose(&mut rand::rng()) {
+                target_path = Some(random_path.clone());
+                self.load_image(random_path);
+                // 添加滚动标记
+                self.scroll_to_current = true;
+            }
+        } else {
+            if let Some(current_path) = &self.current_image_path {
+                if let Some(current_pos) = self
+                    .cached_image_files
+                    .iter()
+                    .position(|p| p == current_path)
+                {
+                    let new_pos = if next {
+                        if current_pos + 1 < self.cached_image_files.len() {
+                            current_pos + 1
+                        } else {
+                            0
+                        }
+                    } else {
+                        if current_pos > 0 {
+                            current_pos - 1
+                        } else {
+                            self.cached_image_files.len() - 1
+                        }
+                    };
+                    let path = self.cached_image_files[new_pos].clone();
+                    target_path = Some(path.clone());
+                    self.load_image(&path);
+                }
+            } else if !self.cached_image_files.is_empty() {
+                let path = self.cached_image_files[0].clone();
+                target_path = Some(path.clone());
                 self.load_image(&path);
             }
-        } else if !self.cached_image_files.is_empty() {
-            let path = self.cached_image_files[0].clone();
-            self.load_image(&path);
+        }
+
+        // 记录目标图片路径，用于后续滚动到该图片
+        if let Some(path) = target_path {
+            self.current_image_path = Some(path.clone());
+            self.current_image_name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.to_string());
+        }
+    }
+
+    // 添加返回上一张图片的函数
+    fn go_back(&mut self) {
+        if let Some(prev_path) = self.history.pop() {
+            self.load_image(&prev_path);
+            self.scroll_to_current = true;
         }
     }
 
@@ -324,7 +384,7 @@ impl AnnotationApp {
         if let Some(path) = rfd::FileDialog::new().pick_folder() {
             self.image_dir = Some(path);
             self.update_file_list();
-            
+
             if !self.cached_image_files.is_empty() {
                 let path = self.cached_image_files[0].clone();
                 self.load_image(&path);
@@ -347,33 +407,33 @@ impl AnnotationApp {
 
     fn update_statistics(&mut self) {
         let mut stats = Statistics::default();
-        
+
         // 统计总图片数
         stats.total_images = self.cached_image_files.len();
         stats.modified_images = self.modified_images.len();
-        
+
         // 当前图片中的标注类型数量
         for bbox in &self.bounding_boxes {
             *stats.current_class_counts.entry(bbox.class).or_insert(0) += 1;
         }
-        
+
         // 保持总体统计不变
         stats.total_class_counts = self.statistics.total_class_counts.clone();
-        
+
         self.statistics = stats;
     }
 
     fn update_total_statistics(&mut self) {
         let mut stats = self.statistics.clone();
         stats.total_class_counts.clear();
-        
+
         // 统计所有图片中的标注类型数量
         if let Some(label_dir) = &self.label_dir {
             for image_path in &self.cached_image_files {
-                let label_path = label_dir.join(
-                    image_path.file_stem().unwrap()
-                ).with_extension("txt");
-                
+                let label_path = label_dir
+                    .join(image_path.file_stem().unwrap())
+                    .with_extension("txt");
+
                 if let Ok(file) = File::open(label_path) {
                     let reader = BufReader::new(file);
                     for line in reader.lines() {
@@ -382,7 +442,7 @@ impl AnnotationApp {
                                 .split_whitespace()
                                 .map(|s| s.parse().unwrap_or(0.0))
                                 .collect();
-                            
+
                             if parts.len() >= 1 {
                                 let class = parts[0] as i32;
                                 *stats.total_class_counts.entry(class).or_insert(0) += 1;
@@ -392,7 +452,7 @@ impl AnnotationApp {
                 }
             }
         }
-        
+
         self.statistics = stats;
     }
 
@@ -400,9 +460,12 @@ impl AnnotationApp {
         ui.heading("统计信息");
         ui.label(format!("总图片数: {}", self.statistics.total_images));
         ui.label(format!("已标注图片: {}", self.statistics.modified_images));
-        ui.label(format!("完成进度: {:.1}%", 
-            (self.statistics.modified_images as f32 / self.statistics.total_images as f32 * 100.0).max(0.0)));
-        
+        ui.label(format!(
+            "完成进度: {:.1}%",
+            (self.statistics.modified_images as f32 / self.statistics.total_images as f32 * 100.0)
+                .max(0.0)
+        ));
+
         ui.separator();
         ui.heading("所有图片标注统计");
         // 获取并排序类别
@@ -414,7 +477,7 @@ impl AnnotationApp {
                 ui.label(format!("类别 {}: {} 个", class, count));
             }
         }
-        
+
         if !self.bounding_boxes.is_empty() {
             ui.separator();
             ui.heading("当前图片标注统计");
@@ -432,12 +495,13 @@ impl AnnotationApp {
         ui.separator();
         ui.heading("操作");
         if ui.button("删除当前图片及标签").clicked() {
-            if let (Some(image_path), Some(label_dir)) = (&self.current_image_path, &self.label_dir) {
+            if let (Some(image_path), Some(label_dir)) = (&self.current_image_path, &self.label_dir)
+            {
                 // 获取标签文件路径
-                let label_path = label_dir.join(
-                    image_path.file_stem().unwrap()
-                ).with_extension("txt");
-                
+                let label_path = label_dir
+                    .join(image_path.file_stem().unwrap())
+                    .with_extension("txt");
+
                 // 删除标签文件
                 if label_path.exists() {
                     if let Err(e) = std::fs::remove_file(&label_path) {
@@ -445,19 +509,19 @@ impl AnnotationApp {
                         return;
                     }
                 }
-                
+
                 // 删除图片文件
                 if let Err(e) = std::fs::remove_file(image_path) {
                     self.show_status(&format!("删除图片文件失败: {}", e));
                     return;
                 }
-                
+
                 // 从缓存中移除
                 if let Some(name) = &self.current_image_name {
                     self.modified_images.remove(name);
                 }
                 self.image_cache.remove(image_path);
-                
+
                 // 更新文件列表并切换到下一张图片
                 self.update_file_list();
                 self.update_total_statistics();
@@ -472,7 +536,14 @@ impl AnnotationApp {
         ui.separator();
         ui.heading("操作模式");
         ui.horizontal(|ui| {
-            if ui.button(if self.is_drawing {"退出绘制"} else {"进入绘制"}).clicked() {
+            if ui
+                .button(if self.is_drawing {
+                    "退出绘制"
+                } else {
+                    "进入绘制"
+                })
+                .clicked()
+            {
                 self.is_drawing = !self.is_drawing;
                 self.drawing_start = None;
                 self.selected_box = None;
@@ -531,61 +602,71 @@ impl eframe::App for AnnotationApp {
                     ui.label(format!("标签目录: {}", label_dir.display()));
                 }
             });
-            
         });
 
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
             if let Some(image_dir) = &self.image_dir {
-                let entries = fs::read_dir(image_dir).unwrap_or_else(|_| return std::fs::read_dir(".").unwrap());
+                let entries = fs::read_dir(image_dir)
+                    .unwrap_or_else(|_| return std::fs::read_dir(".").unwrap());
                 let mut image_files: Vec<_> = entries
                     .filter_map(|entry| entry.ok())
                     .filter(|entry| {
-                        entry.path().extension()
+                        entry
+                            .path()
+                            .extension()
                             .map_or(false, |ext| ext == "jpg" || ext == "png")
                     })
                     .collect();
-                
+
                 image_files.sort_by_key(|entry| entry.path());
-        
+
                 let mut scroll_to_item = false;
                 let scroll_area = egui::ScrollArea::vertical().auto_shrink([false; 2]);
-                
+
                 scroll_area.show(ui, |ui| {
                     for entry in image_files {
                         let path = entry.path();
-                        let file_name = path.file_name()
+                        let file_name = path
+                            .file_name()
                             .unwrap_or_default()
                             .to_string_lossy()
                             .to_string();
-        
-                        let is_selected = self.current_image_name
+
+                        let is_selected = self
+                            .current_image_name
                             .as_ref()
                             .map_or(false, |current| current == &file_name);
-        
+
                         let is_modified = self.modified_images.contains(&file_name);
-        
-                        let button = egui::Button::new(egui::RichText::new(&file_name)
-                            .color(if is_selected {
+
+                        let button = egui::Button::new(egui::RichText::new(&file_name).color(
+                            if is_selected {
                                 egui::Color32::YELLOW
                             } else if is_modified {
                                 egui::Color32::from_rgb(0, 100, 0)
                             } else {
                                 egui::Color32::BLACK
-                            }))
-                            .fill(if is_selected {
-                                egui::Color32::DARK_BLUE
-                            } else {
-                                egui::Color32::from_gray(230)
-                            });
-        
+                            },
+                        ))
+                        .fill(if is_selected {
+                            egui::Color32::DARK_BLUE
+                        } else {
+                            egui::Color32::from_gray(230)
+                        });
+
                         let response = ui.add(button);
                         if response.clicked() {
                             self.load_image(&path);
                         }
-        
+
                         if is_selected && scroll_to_item {
                             response.scroll_to_me(Some(egui::Align::Center));
                             scroll_to_item = false;
+                        }
+
+                        if is_selected && self.scroll_to_current {
+                            response.scroll_to_me(Some(egui::Align::Center));
+                            self.scroll_to_current = false; // 重置滚动标记
                         }
                     }
                 });
@@ -600,15 +681,17 @@ impl eframe::App for AnnotationApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if ui.input(|i| i.key_pressed(egui::Key::W) || i.key_pressed(egui::Key::A)) {
-                self.switch_image(false);
+                self.switch_image(false, false);
             }
-            if ui.input(|i| 
-                   i.key_pressed(egui::Key::S) 
-                || i.key_pressed(egui::Key::D) 
-                || i.key_pressed(egui::Key::Space)) {
-                self.switch_image(true);
+            if ui.input(|i| i.key_pressed(egui::Key::S) || i.key_pressed(egui::Key::D)) {
+                self.switch_image(true, false);
             }
-
+            if ui.input(|i| i.key_pressed(egui::Key::Space)) {
+                self.switch_image(false, true);
+            }
+            if ui.input(|i| i.key_pressed(egui::Key::B)) {
+                self.go_back();
+            }
             if ui.input(|i| i.key_pressed(egui::Key::E)) {
                 self.is_drawing = !self.is_drawing;
                 self.drawing_start = None;
@@ -623,11 +706,10 @@ impl eframe::App for AnnotationApp {
             if let Some(image) = &self.current_image {
                 let available_size = ui.available_size();
                 let image_size = egui::vec2(image.width() as f32, image.height() as f32);
-                
-                let scale = (available_size.x / image_size.x)
-                    .min(available_size.y / image_size.y);
+
+                let scale = (available_size.x / image_size.x).min(available_size.y / image_size.y);
                 let displayed_size = image_size * scale;
-        
+
                 let texture: &egui::TextureHandle = self.texture.get_or_insert_with(|| {
                     ui.ctx().load_texture(
                         "current_image",
@@ -638,12 +720,14 @@ impl eframe::App for AnnotationApp {
                         Default::default(),
                     )
                 });
-                
-                let response = ui.with_layout(
-                    egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
-                    |ui| ui.image((texture.id(), displayed_size))
-                ).inner;
-        
+
+                let response = ui
+                    .with_layout(
+                        egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                        |ui| ui.image((texture.id(), displayed_size)),
+                    )
+                    .inner;
+
                 let image_rect = response.rect;
                 let offset_x = image_rect.min.x + (available_size.x - displayed_size.x) / 2.0;
                 let offset_y = image_rect.min.y + (available_size.y - displayed_size.y) / 2.0;
@@ -653,22 +737,26 @@ impl eframe::App for AnnotationApp {
                         if ui.input(|i| i.pointer.primary_pressed()) {
                             self.drawing_start = Some(pointer);
                         }
-                        
+
                         if let Some(start) = self.drawing_start {
                             let rect = egui::Rect::from_two_pos(start, pointer);
-                            
-                            let min_x = ((rect.min.x - offset_x) / displayed_size.x).clamp(0.0, 1.0);
-                            let min_y = ((rect.min.y - offset_y) / displayed_size.y).clamp(0.0, 1.0);
-                            let max_x = ((rect.max.x - offset_x) / displayed_size.x).clamp(0.0, 1.0);
-                            let max_y = ((rect.max.y - offset_y) / displayed_size.y).clamp(0.0, 1.0);
-                            
+
+                            let min_x =
+                                ((rect.min.x - offset_x) / displayed_size.x).clamp(0.0, 1.0);
+                            let min_y =
+                                ((rect.min.y - offset_y) / displayed_size.y).clamp(0.0, 1.0);
+                            let max_x =
+                                ((rect.max.x - offset_x) / displayed_size.x).clamp(0.0, 1.0);
+                            let max_y =
+                                ((rect.max.y - offset_y) / displayed_size.y).clamp(0.0, 1.0);
+
                             ui.painter().rect_stroke(
                                 rect,
                                 0.0,
                                 egui::Stroke::new(2.0, egui::Color32::YELLOW),
-                                egui::StrokeKind::Middle
+                                egui::StrokeKind::Middle,
                             );
-                            
+
                             if ui.input(|i| i.pointer.primary_released()) {
                                 if min_x < max_x && min_y < max_y {
                                     self.bounding_boxes.push(BoundingBox {
@@ -688,27 +776,24 @@ impl eframe::App for AnnotationApp {
                 } else {
                     if let Some(pointer) = ui.input(|i| i.pointer.hover_pos()) {
                         let mut hovered_box = None;
-                        
+
                         for (i, bbox) in self.bounding_boxes.iter().enumerate().rev() {
                             let box_width = bbox.width * displayed_size.x;
                             let box_height = bbox.height * displayed_size.y;
                             let center_x = offset_x + (bbox.x * displayed_size.x);
                             let center_y = offset_y + (bbox.y * displayed_size.y);
-                            
+
                             let rect = egui::Rect::from_min_size(
-                                egui::pos2(
-                                    center_x - box_width/2.0,
-                                    center_y - box_height/2.0
-                                ),
+                                egui::pos2(center_x - box_width / 2.0, center_y - box_height / 2.0),
                                 egui::vec2(box_width, box_height),
                             );
-                            
+
                             if rect.contains(pointer) {
                                 hovered_box = Some(i);
                                 break;
                             }
                         }
-                        
+
                         if ui.input(|i| i.pointer.primary_clicked()) {
                             if self.selected_box != hovered_box {
                                 self.selected_box = hovered_box;
@@ -727,8 +812,10 @@ impl eframe::App for AnnotationApp {
                                 let dy = delta.y / displayed_size.y;
 
                                 if let Some(bbox) = self.bounding_boxes.get_mut(selected_idx) {
-                                    bbox.x = (bbox.x + dx).clamp(bbox.width/2.0, 1.0 - bbox.width/2.0);
-                                    bbox.y = (bbox.y + dy).clamp(bbox.height/2.0, 1.0 - bbox.height/2.0);
+                                    bbox.x = (bbox.x + dx)
+                                        .clamp(bbox.width / 2.0, 1.0 - bbox.width / 2.0);
+                                    bbox.y = (bbox.y + dy)
+                                        .clamp(bbox.height / 2.0, 1.0 - bbox.height / 2.0);
                                 }
                             }
 
@@ -752,34 +839,31 @@ impl eframe::App for AnnotationApp {
                     let box_height = bbox.height * displayed_size.y;
                     let center_x = offset_x + (bbox.x * displayed_size.x);
                     let center_y = offset_y + (bbox.y * displayed_size.y);
-                    
+
                     let rect = egui::Rect::from_min_size(
-                        egui::pos2(
-                            center_x - box_width/2.0,
-                            center_y - box_height/2.0
-                        ),
+                        egui::pos2(center_x - box_width / 2.0, center_y - box_height / 2.0),
                         egui::vec2(box_width, box_height),
                     );
-                    
+
                     let box_color = if Some(i) == self.selected_box {
                         egui::Color32::GREEN
                     } else {
                         egui::Color32::RED
                     };
-        
+
                     ui.painter().rect_stroke(
                         rect,
                         0.0,
                         egui::Stroke::new(2.0, box_color),
-                        egui::StrokeKind::Middle
+                        egui::StrokeKind::Middle,
                     );
-        
+
                     ui.painter().text(
                         rect.min,
                         egui::Align2::LEFT_TOP,
                         format!("Class {}", bbox.class),
                         egui::FontId::default(),
-                        box_color
+                        box_color,
                     );
                 }
             }
@@ -792,7 +876,7 @@ impl eframe::App for AnnotationApp {
             //     egui::TopBottomPanel::bottom("status_panel").show(ctx, |ui| {
             //         ui.label(&*message);
             //     });
-                
+
             //     *time -= ctx.input(|i| i.unstable_dt);
             //     if *time <= 0.0 {
             //         self.status_message = None;
@@ -844,7 +928,8 @@ fn main() -> Result<(), eframe::Error> {
             app.save_modified_records();
         }
         std::process::exit(0);
-    }).expect("Error setting Ctrl-C handler");
+    })
+    .expect("Error setting Ctrl-C handler");
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -852,31 +937,33 @@ fn main() -> Result<(), eframe::Error> {
             .with_title("数据标注平台"),
         ..Default::default()
     };
-    
+
     eframe::run_native(
         "数据标注平台",
         options,
         Box::new(|cc| {
             // 配置中文字体
             let mut fonts = egui::FontDefinitions::default();
-            
+
             fonts.font_data.insert(
                 "simhei".to_owned(),
                 egui::FontData::from_static(include_bytes!("../SimHei.ttf")).into(),
             );
 
-            fonts.families
+            fonts
+                .families
                 .get_mut(&egui::FontFamily::Proportional)
                 .unwrap()
                 .insert(0, "simhei".to_owned());
 
-            fonts.families
+            fonts
+                .families
                 .get_mut(&egui::FontFamily::Monospace)
                 .unwrap()
                 .push("simhei".to_owned());
 
             cc.egui_ctx.set_fonts(fonts);
-            
+
             let app = AnnotationApp::default();
             *app_clone3.lock().unwrap() = Some(app.clone());
             Ok(Box::new(app))
