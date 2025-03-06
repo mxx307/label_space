@@ -1,6 +1,7 @@
 [package]
 name = "label_space"
 version = "0.1.0"
+authors = ["mxx307 <mxx307slq@gmail.com>"]
 edition = "2024"
 
 [dependencies]
