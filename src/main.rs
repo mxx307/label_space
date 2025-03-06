@@ -11,10 +11,10 @@ use std::path::PathBuf;
 #[derive(Clone)]
 struct BoundingBox {
     class: i32,
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
 }
 
 #[derive(Clone)]
@@ -139,7 +139,7 @@ impl AnnotationApp {
                     let reader = BufReader::new(file);
                     for line in reader.lines() {
                         if let Ok(line) = line {
-                            let parts: Vec<f32> = line
+                            let parts: Vec<f64> = line
                                 .split_whitespace()
                                 .map(|s| s.parse().unwrap_or(0.0))
                                 .collect();
@@ -761,10 +761,10 @@ impl eframe::App for AnnotationApp {
                                 if min_x < max_x && min_y < max_y {
                                     self.bounding_boxes.push(BoundingBox {
                                         class: self.selected_class,
-                                        x: (min_x + max_x) / 2.0,
-                                        y: (min_y + max_y) / 2.0,
-                                        width: max_x - min_x,
-                                        height: max_y - min_y,
+                                        x: ((min_x + max_x) / 2.0) as f64,
+                                        y: ((min_y + max_y) / 2.0) as f64,
+                                        width: (max_x - min_x) as f64,
+                                        height: (max_y - min_y) as f64,
                                     });
                                     self.save_annotations();
                                     self.show_status("已添加新边界框");
@@ -778,10 +778,10 @@ impl eframe::App for AnnotationApp {
                         let mut hovered_box = None;
 
                         for (i, bbox) in self.bounding_boxes.iter().enumerate().rev() {
-                            let box_width = bbox.width * displayed_size.x;
-                            let box_height = bbox.height * displayed_size.y;
-                            let center_x = offset_x + (bbox.x * displayed_size.x);
-                            let center_y = offset_y + (bbox.y * displayed_size.y);
+                            let box_width = bbox.width as f32 * displayed_size.x;
+                            let box_height = bbox.height as f32 * displayed_size.y;
+                            let center_x = offset_x + (bbox.x as f32 * displayed_size.x);
+                            let center_y = offset_y + (bbox.y as f32 * displayed_size.y);
 
                             let rect = egui::Rect::from_min_size(
                                 egui::pos2(center_x - box_width / 2.0, center_y - box_height / 2.0),
@@ -808,14 +808,16 @@ impl eframe::App for AnnotationApp {
                         if let Some(selected_idx) = self.selected_box {
                             if ui.input(|i| i.pointer.primary_down()) {
                                 let delta = ui.input(|i| i.pointer.delta());
-                                let dx = delta.x / displayed_size.x;
-                                let dy = delta.y / displayed_size.y;
+                                let dx = (delta.x as f64) / (displayed_size.x as f64);
+                                let dy = (delta.y as f64) / (displayed_size.y as f64);
 
                                 if let Some(bbox) = self.bounding_boxes.get_mut(selected_idx) {
-                                    bbox.x = (bbox.x + dx)
-                                        .clamp(bbox.width / 2.0, 1.0 - bbox.width / 2.0);
-                                    bbox.y = (bbox.y + dy)
-                                        .clamp(bbox.height / 2.0, 1.0 - bbox.height / 2.0);
+                                    // 确保边界框不会超出图像范围
+                                    let new_x = (bbox.x + dx).clamp(bbox.width / 2.0, 1.0 - bbox.width / 2.0);
+                                    let new_y = (bbox.y + dy).clamp(bbox.height / 2.0, 1.0 - bbox.height / 2.0);
+                                    // 进行舍入处理
+                                    bbox.x = new_x;
+                                    bbox.y = new_y;
                                 }
                             }
 
@@ -835,10 +837,10 @@ impl eframe::App for AnnotationApp {
                 }
 
                 for (i, bbox) in self.bounding_boxes.iter().enumerate() {
-                    let box_width = bbox.width * displayed_size.x;
-                    let box_height = bbox.height * displayed_size.y;
-                    let center_x = offset_x + (bbox.x * displayed_size.x);
-                    let center_y = offset_y + (bbox.y * displayed_size.y);
+                    let box_width = bbox.width as f32 * displayed_size.x;
+                    let box_height = bbox.height as f32 * displayed_size.y;
+                    let center_x = offset_x + (bbox.x as f32 * displayed_size.x);
+                    let center_y = offset_y + (bbox.y as f32 * displayed_size.y);
 
                     let rect = egui::Rect::from_min_size(
                         egui::pos2(center_x - box_width / 2.0, center_y - box_height / 2.0),
