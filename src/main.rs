@@ -733,6 +733,15 @@ impl eframe::App for AnnotationApp {
                 let offset_y = image_rect.min.y + (available_size.y - displayed_size.y) / 2.0;
 
                 if self.is_drawing {
+                    // 监听数字键输入
+                    for key_num in 0..10 {
+                        let key = egui::Key::from_name(&format!("{}", key_num)).unwrap();
+                        if ui.input(|i| i.key_pressed(key)) {
+                            self.selected_class = key_num as i32 - 1;
+                            self.show_status(&format!("已切换到类别 {}", key_num));
+                        }
+                    }
+
                     if let Some(pointer) = ui.input(|i| i.pointer.hover_pos()) {
                         if ui.input(|i| i.pointer.primary_pressed()) {
                             self.drawing_start = Some(pointer);
