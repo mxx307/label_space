@@ -872,17 +872,6 @@ impl eframe::App for AnnotationApp {
                 self.save_annotations();
             }
 
-            // if let Some((message, time)) = &mut self.status_message {
-            //     egui::TopBottomPanel::bottom("status_panel").show(ctx, |ui| {
-            //         ui.label(&*message);
-            //     });
-
-            //     *time -= ctx.input(|i| i.unstable_dt);
-            //     if *time <= 0.0 {
-            //         self.status_message = None;
-            //     }
-            // }
-
             if ui.input(|i| i.key_pressed(egui::Key::Delete)) {
                 if let Some(selected) = self.selected_box {
                     self.bounding_boxes.remove(selected);
