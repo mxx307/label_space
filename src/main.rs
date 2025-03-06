@@ -331,6 +331,7 @@ impl AnnotationApp {
                     let path = self.cached_image_files[new_pos].clone();
                     target_path = Some(path.clone());
                     self.load_image(&path);
+                    self.scroll_to_current = true;
                 }
             } else if !self.cached_image_files.is_empty() {
                 let path = self.cached_image_files[0].clone();
@@ -544,9 +545,10 @@ impl AnnotationApp {
                                 // 更新文件列表并切换到下一张图片
                                 self.update_file_list();
                                 self.update_total_statistics();
-                                let next_path = self.cached_image_files.first().cloned();
-                                if let Some(path) = next_path {
-                                    self.load_image(&path);
+                                if let Some(prev_path) = self.history.pop() {
+                                    self.load_image(&prev_path);
+                                } else if let Some(next_path) = self.cached_image_files.first().cloned() {
+                                    self.load_image(&next_path);
                                 }
                                 self.show_status("已删除当前图片及标签");
                             }
