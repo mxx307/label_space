@@ -58,6 +58,7 @@ struct AnnotationApp {
     drawing_start: Option<egui::Pos2>,
     scroll_to_current: bool,
     history: Vec<PathBuf>, // 记录浏览历史
+    show_delete_confirmation: bool,
 }
 
 impl Default for AnnotationApp {
@@ -82,6 +83,7 @@ impl Default for AnnotationApp {
             drawing_start: None,
             scroll_to_current: false,
             history: vec![],
+            show_delete_confirmation: false,
         };
         app.load_modified_records();
         app
@@ -495,42 +497,66 @@ impl AnnotationApp {
         ui.separator();
         ui.heading("操作");
         if ui.button("删除当前图片及标签").clicked() {
-            if let (Some(image_path), Some(label_dir)) = (&self.current_image_path, &self.label_dir)
-            {
-                // 获取标签文件路径
-                let label_path = label_dir
-                    .join(image_path.file_stem().unwrap())
-                    .with_extension("txt");
+            self.show_delete_confirmation = true; // 点击删除按钮时显示确认对话框
+        }
+        // 显示确认对话框
+        if self.show_delete_confirmation {
+            let screen_size = ui.ctx().screen_rect().size();
+            let window_size = egui::vec2(250.0, 100.0); // 假设窗口大小
+            let pos = egui::pos2(
+                (screen_size.x - window_size.x) / 2.0,
+                (screen_size.y - window_size.y) / 2.0,
+            );
+            egui::Window::new("确认删除")
+               .collapsible(false)
+               .resizable(false)
+               .fixed_pos(pos)
+               .show(ui.ctx(), |ui| {
+                    ui.label("你确定要删除当前图片及标签吗？");
+                    ui.horizontal(|ui| {
+                        if ui.button("确定").clicked() {
+                            if let (Some(image_path), Some(label_dir)) = (&self.current_image_path, &self.label_dir) {
+                                // 获取标签文件路径
+                                let label_path = label_dir
+                                   .join(image_path.file_stem().unwrap())
+                                   .with_extension("txt");
 
-                // 删除标签文件
-                if label_path.exists() {
-                    if let Err(e) = std::fs::remove_file(&label_path) {
-                        self.show_status(&format!("删除标签文件失败: {}", e));
-                        return;
-                    }
-                }
+                                // 删除标签文件
+                                if label_path.exists() {
+                                    if let Err(e) = std::fs::remove_file(&label_path) {
+                                        self.show_status(&format!("删除标签文件失败: {}", e));
+                                        return;
+                                    }
+                                }
 
-                // 删除图片文件
-                if let Err(e) = std::fs::remove_file(image_path) {
-                    self.show_status(&format!("删除图片文件失败: {}", e));
-                    return;
-                }
+                                // 删除图片文件
+                                if let Err(e) = std::fs::remove_file(image_path) {
+                                    self.show_status(&format!("删除图片文件失败: {}", e));
+                                    return;
+                                }
 
-                // 从缓存中移除
-                if let Some(name) = &self.current_image_name {
-                    self.modified_images.remove(name);
-                }
-                self.image_cache.remove(image_path);
+                                // 从缓存中移除
+                                if let Some(name) = &self.current_image_name {
+                                    self.modified_images.remove(name);
+                                }
+                                self.image_cache.remove(image_path);
 
-                // 更新文件列表并切换到下一张图片
-                self.update_file_list();
-                self.update_total_statistics();
-                let next_path = self.cached_image_files.first().cloned();
-                if let Some(path) = next_path {
-                    self.load_image(&path);
-                }
-                self.show_status("已删除当前图片及标签");
-            }
+                                // 更新文件列表并切换到下一张图片
+                                self.update_file_list();
+                                self.update_total_statistics();
+                                let next_path = self.cached_image_files.first().cloned();
+                                if let Some(path) = next_path {
+                                    self.load_image(&path);
+                                }
+                                self.show_status("已删除当前图片及标签");
+                            }
+                            self.show_delete_confirmation = false; // 关闭确认对话框
+                        }
+                        if ui.button("取消").clicked() {
+                            self.show_delete_confirmation = false; // 关闭确认对话框
+                        }
+                    });
+                });
         }
 
         ui.separator();
