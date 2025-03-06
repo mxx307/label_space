@@ -1,0 +1,11 @@
+[package]
+name = "label_space"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ctrlc = "3.4.5"
+eframe = "0.31.0"
+egui = "0.31.0"
+image = "0.25.5"
+rfd = "0.15.2"
