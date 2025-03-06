@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use ctrlc;
 use eframe::egui;
 use image::DynamicImage;
@@ -509,18 +511,20 @@ impl AnnotationApp {
                 (screen_size.y - window_size.y) / 2.0,
             );
             egui::Window::new("确认删除")
-               .collapsible(false)
-               .resizable(false)
-               .fixed_pos(pos)
-               .show(ui.ctx(), |ui| {
+                .collapsible(false)
+                .resizable(false)
+                .fixed_pos(pos)
+                .show(ui.ctx(), |ui| {
                     ui.label("你确定要删除当前图片及标签吗？");
                     ui.horizontal(|ui| {
                         if ui.button("确定").clicked() {
-                            if let (Some(image_path), Some(label_dir)) = (&self.current_image_path, &self.label_dir) {
+                            if let (Some(image_path), Some(label_dir)) =
+                                (&self.current_image_path, &self.label_dir)
+                            {
                                 // 获取标签文件路径
                                 let label_path = label_dir
-                                   .join(image_path.file_stem().unwrap())
-                                   .with_extension("txt");
+                                    .join(image_path.file_stem().unwrap())
+                                    .with_extension("txt");
 
                                 // 删除标签文件
                                 if label_path.exists() {
@@ -547,7 +551,9 @@ impl AnnotationApp {
                                 self.update_total_statistics();
                                 if let Some(prev_path) = self.history.pop() {
                                     self.load_image(&prev_path);
-                                } else if let Some(next_path) = self.cached_image_files.first().cloned() {
+                                } else if let Some(next_path) =
+                                    self.cached_image_files.first().cloned()
+                                {
                                     self.load_image(&next_path);
                                 }
                                 self.show_status("已删除当前图片及标签");
@@ -850,8 +856,10 @@ impl eframe::App for AnnotationApp {
 
                                 if let Some(bbox) = self.bounding_boxes.get_mut(selected_idx) {
                                     // 确保边界框不会超出图像范围
-                                    let new_x = (bbox.x + dx).clamp(bbox.width / 2.0, 1.0 - bbox.width / 2.0);
-                                    let new_y = (bbox.y + dy).clamp(bbox.height / 2.0, 1.0 - bbox.height / 2.0);
+                                    let new_x = (bbox.x + dx)
+                                        .clamp(bbox.width / 2.0, 1.0 - bbox.width / 2.0);
+                                    let new_y = (bbox.y + dy)
+                                        .clamp(bbox.height / 2.0, 1.0 - bbox.height / 2.0);
                                     // 进行舍入处理
                                     bbox.x = new_x;
                                     bbox.y = new_y;
@@ -935,7 +943,7 @@ impl eframe::App for AnnotationApp {
     }
 }
 
-fn main() -> Result<(), eframe::Error> {
+fn main() {
     let app = std::sync::Arc::new(std::sync::Mutex::new(None::<AnnotationApp>));
     let app_clone1 = app.clone();
     let app_clone2 = app.clone();
@@ -966,7 +974,7 @@ fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
 
-    eframe::run_native(
+    if let Err(e) = eframe::run_native(
         "数据标注平台",
         options,
         Box::new(|cc| {
@@ -996,5 +1004,7 @@ fn main() -> Result<(), eframe::Error> {
             *app_clone3.lock().unwrap() = Some(app.clone());
             Ok(Box::new(app))
         }),
-    )
+    ) {
+        eprintln!("Error running native application: {}", e);
+    }
 }
