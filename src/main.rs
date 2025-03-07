@@ -352,6 +352,48 @@ impl AnnotationApp {
         }
     }
 
+    fn switch_to_next_unmodified(&mut self) {
+        if self.cached_image_files.is_empty() {
+            self.update_file_list();
+        }
+
+        let start_pos = if let Some(current_path) = &self.current_image_path {
+            self.cached_image_files
+                .iter()
+                .position(|p| p == current_path)
+                .map(|pos| pos + 1)
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
+        // 从当前位置开始查找下一个未修改的图片
+        for i in start_pos..self.cached_image_files.len() {
+            let path = self.cached_image_files[i].clone();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if !self.modified_images.contains(name) {
+                    self.load_image(&path);
+                    self.scroll_to_current = true;
+                    return;
+                }
+            }
+        }
+
+        // 如果从当前位置到末尾没有找到，从头开始找到当前位置
+        for i in 0..start_pos {
+            let path = self.cached_image_files[i].clone();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if !self.modified_images.contains(name) {
+                    self.load_image(&path);
+                    self.scroll_to_current = true;
+                    return;
+                }
+            }
+        }
+
+        self.show_status("没有找到未修改的图片");
+    }
+
     // 添加返回上一张图片的函数
     fn go_back(&mut self) {
         if let Some(prev_path) = self.history.pop() {
@@ -725,6 +767,9 @@ impl eframe::App for AnnotationApp {
             }
             if ui.input(|i| i.key_pressed(egui::Key::B)) {
                 self.go_back();
+            }
+            if ui.input(|i| i.key_pressed(egui::Key::N)) {
+                self.switch_to_next_unmodified();
             }
             if ui.input(|i| i.key_pressed(egui::Key::E)) {
                 self.is_drawing = !self.is_drawing;
