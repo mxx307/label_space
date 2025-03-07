@@ -817,7 +817,7 @@ impl eframe::App for AnnotationApp {
                         let key = egui::Key::from_name(&format!("{}", key_num)).unwrap();
                         if ui.input(|i| i.key_pressed(key)) {
                             self.selected_class = key_num as i32 - 1;
-                            self.show_status(&format!("已切换到类别 {}", key_num));
+                            self.show_status(&format!("已切换到类别 {}", &self.selected_class));
                         }
                     }
 
