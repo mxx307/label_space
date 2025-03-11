@@ -87,18 +87,6 @@ impl eframe::App for MyApp {
         ui::side::side_panel(&mut self.app, ctx);
         ui::statistics::statistics_panel(&mut self.app, ctx);
         ui::central::central_panel(&mut self.app, ctx);
-        
-        // 更新状态消息
-        if let Some((message, time_left)) = &mut self.app.status_message {
-            egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
-                ui.label(message.as_str());
-            });
-            
-            *time_left -= ctx.input(|i| i.predicted_dt);
-            if *time_left <= 0.0 {
-                self.app.status_message = None;
-            }
-        }
     }
     
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
