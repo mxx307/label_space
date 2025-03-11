@@ -31,6 +31,10 @@ pub struct AnnotationApp {
     pub scroll_to_current: bool,
     pub history: Vec<PathBuf>, // 记录浏览历史
     pub show_delete_confirmation: bool,
+    pub show_export_result_dialog: bool,
+    pub export_result_info: String,
+    pub show_labels: bool,       // 控制标签显示
+    pub show_center_points: bool, // 控制中心点显示
 }
 
 impl Default for AnnotationApp {
@@ -56,6 +60,10 @@ impl Default for AnnotationApp {
             scroll_to_current: false,
             history: vec![],
             show_delete_confirmation: false,
+            show_export_result_dialog: false,
+            export_result_info: String::new(),
+            show_labels: true,           // 默认显示标签
+            show_center_points: false,   // 默认不显示中心点
         };
         app.load_modified_records();
         app
@@ -451,5 +459,79 @@ impl AnnotationApp {
 
     pub fn on_exit(&mut self) {
         self.save_modified_records();
+    }
+
+    pub fn export_modified_files(&mut self, export_dir: PathBuf) -> Result<i32, String> {
+        // 检查是否有已修改的文件
+        if self.modified_images.is_empty() {
+            return Err("没有已修改的文件可导出".to_string());
+        }
+        
+        // 检查源目录是否存在
+        if self.image_dir.is_none() || self.label_dir.is_none() {
+            return Err("请先选择图片和标签目录".to_string());
+        }
+        
+        let image_dir = self.image_dir.as_ref().unwrap();
+        let label_dir = self.label_dir.as_ref().unwrap();
+        
+        // 创建导出目录结构
+        let images_dir = export_dir.join("images");
+        let labels_dir = export_dir.join("labels");
+        
+        // 检查目标目录是否为空
+        let images_empty = if images_dir.exists() {
+            fs::read_dir(&images_dir).map(|entries| entries.count() == 0).unwrap_or(true)
+        } else {
+            true
+        };
+        
+        let labels_empty = if labels_dir.exists() {
+            fs::read_dir(&labels_dir).map(|entries| entries.count() == 0).unwrap_or(true)
+        } else {
+            true
+        };
+        
+        // 如果目标目录不为空，返回错误
+        if !images_empty || !labels_empty {
+            return Err("目标目录不为空，请选择空目录或新目录".to_string());
+        }
+        
+        // 创建目录（如果不存在）
+        if !images_dir.exists() {
+            fs::create_dir_all(&images_dir).map_err(|e| format!("创建图片目录失败: {}", e))?;
+        }
+        
+        if !labels_dir.exists() {
+            fs::create_dir_all(&labels_dir).map_err(|e| format!("创建标签目录失败: {}", e))?;
+        }
+        
+        // 导出已修改的文件
+        let mut exported_count = 0;
+        
+        for filename in &self.modified_images {
+            // 复制图片文件
+            let src_image_path = image_dir.join(filename);
+            let dst_image_path = images_dir.join(filename);
+            
+            if src_image_path.exists() {
+                fs::copy(&src_image_path, &dst_image_path)
+                    .map_err(|e| format!("复制图片文件失败 {}: {}", filename, e))?;
+            }
+            
+            // 复制标签文件
+            let label_filename = src_image_path.file_stem().unwrap().to_string_lossy().to_string() + ".txt";
+            let src_label_path = label_dir.join(&label_filename);
+            let dst_label_path = labels_dir.join(&label_filename);
+            
+            if src_label_path.exists() {
+                fs::copy(&src_label_path, &dst_label_path)
+                    .map_err(|e| format!("复制标签文件失败 {}: {}", label_filename, e))?;
+            }
+            
+            exported_count += 1;
+        }
+        
+        Ok(exported_count)
     }
 }

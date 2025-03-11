@@ -1,3 +1,5 @@
+use core::f32;
+
 use eframe::egui;
 
 use crate::app::AnnotationApp;
@@ -40,6 +42,60 @@ pub fn statistics_panel(app: &mut AnnotationApp, ctx: &egui::Context) {
                     }
                 }
             }
+
+            ui.separator();
+            ui.heading("导出功能");
+            
+            if ui.button("导出已修改的文件").clicked() {
+                if app.modified_images.is_empty() {
+                    app.show_status("没有已修改的文件可导出");
+                } else if app.image_dir.is_none() || app.label_dir.is_none() {
+                    app.show_status("请先选择图片和标签目录");
+                } else {
+                    if let Some(export_dir) = rfd::FileDialog::new().pick_folder() {
+                        // 将导出结果保存到临时变量，用于在弹窗中显示
+                        let export_result = app.export_modified_files(export_dir.clone());
+                        let export_dir_display = export_dir.display().to_string();
+                        let modified_count = app.modified_images.len();
+                        
+                        // 设置弹窗标志
+                        app.show_export_result_dialog = true;
+                        app.export_result_info = match export_result {
+                            Ok(count) => {
+                                format!("实际已修改数量 {}, 成功导出 {} 个文件到 {}", 
+                                    modified_count, count, export_dir_display)
+                            },
+                            Err(e) => {
+                                format!("导出失败: {}", e)
+                            }
+                        };
+                    }
+                }
+            }
+            
+            // 显示导出结果弹窗
+            if app.show_export_result_dialog {
+                let screen_size = ui.ctx().screen_rect().size();
+                let window_size = egui::vec2(350.0, 100.0);
+                let pos = egui::pos2(
+                    (screen_size.x - window_size.x) / 2.0,
+                    (screen_size.y - window_size.y) / 2.0,
+                );
+                
+                egui::Window::new("导出结果")
+                    .collapsible(false)
+                    .resizable(false)
+                    .fixed_pos(pos)
+                    .show(ui.ctx(), |ui| {
+                        ui.label(&app.export_result_info);
+                        ui.horizontal(|ui| {
+                            if ui.button("确定").clicked() {
+                                app.show_export_result_dialog = false;
+                            }
+                        });
+                    });
+            }
+
 
             ui.separator();
             ui.heading("操作");
@@ -134,6 +190,37 @@ pub fn statistics_panel(app: &mut AnnotationApp, ctx: &egui::Context) {
                 }
             });
 
+            // 添加显示控制按钮
+            ui.separator();
+            ui.heading("显示设置");
+
+            // 标签显示控制
+            if ui.button(if app.show_labels {
+                "隐藏标签"
+            } else {
+                "显示标签"
+            }).clicked() {
+                app.show_labels = !app.show_labels;
+                app.show_status(if app.show_labels {
+                    "已显示标签"
+                } else {
+                    "已隐藏标签"
+                });
+            }
+
+            // 中心点显示控制
+            if ui.button(if app.show_center_points {
+                "隐藏中心点"
+            } else {
+                "显示中心点"
+            }).clicked() {
+                app.show_center_points = !app.show_center_points;
+                app.show_status(if app.show_center_points {
+                    "已显示中心点"
+                } else {
+                    "已隐藏中心点"
+                });
+            }
             if app.is_drawing {
                 ui.heading("添加边界框");
                 // 添加类型选择按钮
@@ -155,10 +242,15 @@ pub fn statistics_panel(app: &mut AnnotationApp, ctx: &egui::Context) {
             ui.add_space(ui.available_height() - 30.0);
 
             // 在底部显示状态消息
-            if let Some((message, _)) = &app.status_message {
+            if let Some((message, time_left)) = &app.status_message {
                 ui.horizontal(|ui| {
                     ui.label(message);
                 });
+                let time_left = &mut time_left.clone();
+                *time_left -= ctx.input(|i| i.predicted_dt);
+                if *time_left <= 0.0 {
+                    app.status_message = None;
+                }
             }
         });
 }

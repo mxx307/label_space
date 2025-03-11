@@ -199,13 +199,46 @@ pub fn central_panel(app: &mut AnnotationApp, ctx: &egui::Context) {
                     egui::StrokeKind::Middle,
                 );
 
-                ui.painter().text(
-                    rect.min,
-                    egui::Align2::LEFT_TOP,
-                    format!("Class {}", bbox.class),
-                    egui::FontId::default(),
-                    box_color,
-                );
+                // 根据设置显示或隐藏标签
+                if app.show_labels {
+                    ui.painter().text(
+                        rect.min,
+                        egui::Align2::LEFT_TOP,
+                        format!("Class {}", bbox.class),
+                        egui::FontId::default(),
+                        box_color,
+                    );
+                }
+                
+                // 根据设置显示或隐藏中心点
+                if app.show_center_points {
+                    // 绘制中心点
+                    let center_point_size = 5.0;
+                    
+                    // 绘制中心点（实心圆）
+                    ui.painter().circle_filled(
+                        egui::pos2(center_x, center_y),
+                        center_point_size / 2.0,
+                        box_color
+                    );
+                    
+                    // 绘制十字线
+                    let line_length = 10.0;
+                    ui.painter().line_segment(
+                        [
+                            egui::pos2(center_x - line_length, center_y),
+                            egui::pos2(center_x + line_length, center_y),
+                        ],
+                        egui::Stroke::new(1.0, box_color),
+                    );
+                    ui.painter().line_segment(
+                        [
+                            egui::pos2(center_x, center_y - line_length),
+                            egui::pos2(center_x, center_y + line_length),
+                        ],
+                        egui::Stroke::new(1.0, box_color),
+                    );
+                }
             }
         }
 
